@@ -1,0 +1,66 @@
+CREATE DATABASE baseTramites;
+USE baseTramites;
+CREATE TABLE tSolicitante
+(
+idS VARCHAR(4) NOT NULL, 
+tipoS VARCHAR(7),
+tipoDocumS VARCHAR(7),
+nroDocumS VARCHAR(15),
+paternoS VARCHAR(50),
+maternoS VARCHAR(50),
+nombresS VARCHAR(50),
+razonSocialS VARCHAR(50),
+celularS VARCHAR(15),
+telefonoS VARCHAR(15),
+dirElectronS VARCHAR(50),
+PRIMARY KEY (idS)
+);
+
+CREATE TABLE tOficina
+(
+idO VARCHAR(4) NOT NULL,
+denominacionO VARCHAR(50),
+ubicacionO VARCHAR(50),
+responsableO VARCHAR(50),
+PRIMARY KEY (idO)
+);
+
+CREATE TABLE tConcepto
+(
+idC VARCHAR(4) NOT NULL,
+denominacionC VARCHAR(50),
+costoC DECIMAL(10,2),
+PRIMARY KEY (idC)
+);
+
+CREATE TABLE tRecibo
+(
+idR VARCHAR(4) NOT NULL, 
+fechaHoraR DATETIME,
+cantidadR INT,
+totalR DECIMAL(10,2),
+idC VARCHAR(4),
+PRIMARY KEY (idR),
+FOREIGN KEY (idC) REFERENCES tConcepto(idC),
+idS VARCHAR(4),
+FOREIGN KEY (idS) REFERENCES tSolicitante(idS)
+);
+
+CREATE TABLE tTramite
+( idT VARCHAR(4) NOT NULL, 
+fechaHoraT DATETIME,
+nombreT VARCHAR(70),
+cantidadFoliosT INT,
+idS VARCHAR(4),
+PRIMARY KEY (idT),
+FOREIGN KEY (idS) REFERENCES tSolicitante(idS),
+idO VARCHAR(4),
+FOREIGN KEY (idO) REFERENCES tOficina(idO));
+
+CREATE TABLE tRecibo_Tramite
+(idRT VARCHAR(4) NOT NULL,
+PRIMARY KEY (idRT),
+idT VARCHAR(4),
+FOREIGN KEY (idT) REFERENCES tTramite(idT),
+idR VARCHAR(4),
+FOREIGN KEY (idR) REFERENCES tRecibo(idR));
