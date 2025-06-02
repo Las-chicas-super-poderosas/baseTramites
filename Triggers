@@ -1,1 +1,215 @@
+--trigger para calcular automáticamente el totalR en tRecibo.
+
+USE baseTramite;
+GO
+
+IF OBJECT_ID('d_calcular_total_recibo', 'TR') IS NOT NULL
+BEGIN
+    DROP TRIGGER d_calcular_total_recibo;
+END;
+GO
+
+CREATE TRIGGER d_calcular_total_recibo
+ON tRecibo
+INSTEAD OF INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO tRecibo (idR, fechaHoraR, cantidadR, totalR, idC, idS)
+    SELECT
+        i.idR,
+        i.fechaHoraR,
+        i.cantidadR,
+        i.cantidadR * c.costoC AS totalR,
+        i.idC,
+        i.idS
+    FROM
+        inserted i
+    INNER JOIN
+        tConcepto c ON i.idC = c.idC;
+END;
+GO
+
+PRINT 'Verifying d_calcular_total_recibo trigger...';
+
+IF EXISTS (SELECT 1 FROM tRecibo WHERE idR = 'R010')
+BEGIN
+    DELETE FROM tRecibo WHERE idR = 'R010';
+END;
+
+INSERT INTO tRecibo (idR, fechaHoraR, cantidadR, idC, idS)
+VALUES('R010', '2025-03-17', 5, 'C001','S005');
+
+SELECT * FROM tRecibo WHERE idR = 'R010';
+
+--------------------------------------------------------------------------------------------------------------------------
+
+-- trigger para validar el formato de correo electrónico en tSolicitante.
+
+USE baseTramite;
+GO
+
+-- Eliminar el trigger si ya existe
+IF OBJECT_ID('d_validar_email_solicitante', 'TR') IS NOT NULL
+BEGIN
+    DROP TRIGGER d_validar_email_solicitante;
+END;
+GO
+
+-- Crear el trigger
+CREATE TRIGGER d_validar_email_solicitante
+ON tSolicitante
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Validación para estudiantes
+    IF EXISTS (
+        SELECT 1 FROM inserted
+        WHERE tipoS = 'EST' AND dirElectronS NOT LIKE '%@uandina.edu.pe'
+    )
+    BEGIN
+        RAISERROR('Los estudiantes deben tener un correo institucional (@uandina.edu.pe)', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END;
+
+    -- Validación para profesores
+    IF EXISTS (
+        SELECT 1 FROM inserted
+        WHERE tipoS = 'PROF' AND dirElectronS NOT LIKE '%@uandina.edu%'
+    )
+    BEGIN
+        RAISERROR('Los profesores deben tener un correo institucional (@uandina.edu)', 16, 1);
+        ROLLBACK TRANSACTION;
+        RETURN;
+    END;
+END;
+GO
+
+IF EXISTS (SELECT 1 FROM tSolicitante WHERE idS = 'S020')
+BEGIN
+    DELETE FROM tSolicitante WHERE idS = 'S020';
+END;
+GO
+
+INSERT INTO tSolicitante 
+VALUES ('S020', 'EST', 'CARNET', '1234567890', 'Aldo', 'Zamalloa', 'Cárdenas', 'Aldo Zamalloa Cárdenas', '120202020E@uandina.edu.pe', '920202020', '51-84-222020');
+
+SELECT * FROM tSolicitante WHERE idS = 'S020';
+
+
+--------------------------------------------------------------------------------------------------------------------------
+
+--trigger para detectar cambios en tTramite.
+
+CREATE TABLE tAuditoriaTramite (
+ idAuditoria INT IDENTITY(1,1) PRIMARY KEY,
+ idT VARCHAR(4),
+ fechaHoraCambio DATETIME,
+ usuario VARCHAR(50),
+ accion VARCHAR(10),
+ detalles VARCHAR(MAX)
+);
+CREATE TRIGGER d_auditar_cambios_tramite
+ON tTramite
+AFTER UPDATE
+AS
+BEGIN
+ SET NOCOUNT ON;
+ INSERT INTO tAuditoriaTramite (idT, fechaHoraCambio, usuario, accion, detalles)
+ SELECT
+ i.idT,
+ GETDATE(),
+ SUSER_NAME(),
+ 'UPDATE',
+ 'Cambios: ' +
+ CASE WHEN d.fechaHoraT <> i.fechaHoraT THEN 'fechaHoraT: ' +
+CONVERT(VARCHAR, d.fechaHoraT, 120) + ' -> ' + CONVERT(VARCHAR, i.fechaHoraT,
+120) + '; ' ELSE '' END +
+ CASE WHEN d.nombreT <> i.nombreT THEN 'nombreT: ' + d.nombreT + ' -> ' +
+i.nombreT + '; ' ELSE '' END + CASE WHEN d.cantidadFoliosT <> i.cantidadFoliosT THEN 'cantidadFoliosT: ' +
+CAST(d.cantidadFoliosT AS VARCHAR) + ' -> ' + CAST(i.cantidadFoliosT AS VARCHAR) + ';
+' ELSE '' END +
+ CASE WHEN d.idS <> i.idS THEN 'idS: ' + d.idS + ' -> ' + i.idS + '; ' ELSE '' END +
+ CASE WHEN d.idO <> i.idO THEN 'idO: ' + d.idO + ' -> ' + i.idO + '; ' ELSE '' END
+ FROM
+ inserted i
+ JOIN
+ deleted d ON i.idT = d.idT;
+END;
+
+SELECT * FROM tTramite;
+GO
+
+--------------------------------------------------------------------------------------------------------------------------
+
+--Trigger para poner el nombre del solicitante completo en mayúsculas
+
+CREATE TRIGGER trg_MayusculasNombresSolicitante
+ON tSolicitante
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE s
+    SET 
+        paternoS = UPPER(i.paternoS),
+        maternoS = UPPER(i.maternoS),
+        nombresS = UPPER(i.nombresS)
+    FROM tSolicitante s
+    JOIN inserted i ON s.idS = i.idS;
+END;
+
+INSERT INTO tSolicitante (idS, tipoS, tipoDocumS, nroDocumS, paternoS, maternoS, nombresS, razonSocialS, celularS, telefonoS, dirElectronS)
+VALUES ('S008', 'EST', 'carnet', '987654321Z', 'gómez', 'perez', 'maria luisa', NULL, '999999999', '51-84-229999', 'mlgomez@example.com');
+
+--------------------------------------------------------------------------------------------------------------------------
+
+--Trigger que impide insertar o actualizar un recibo sin tener un concepto
+
+CREATE TRIGGER trg_ValidarConceptoEnRecibo
+ON tRecibo
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF EXISTS (
+        SELECT 1
+        FROM inserted
+        WHERE idC IS NULL
+    )
+    BEGIN
+        RAISERROR('No se puede insertar o actualizar un recibo sin un concepto asociado (idC).', 16, 1);
+        ROLLBACK TRANSACTION;
+    END
+END;
+
+INSERT INTO tRecibo (idR, fechaHoraR, cantidadR, totalR, idC, idS)
+VALUES ('R100', GETDATE(), 1, 100, NULL, 'S001');
+
+----------------------------------------------------------------------------------------------------------------------------
+
+--Trigger que muestra un mensaje informativo al ingresar registros
+
+CREATE TRIGGER trg_MensajeNuevoSolicitante
+ON tSolicitante
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @nuevoID VARCHAR(4);
+
+    SELECT TOP 1 @nuevoID = idS FROM inserted;
+
+    PRINT 'Se ha insertado un nuevo solicitante con idS = ' + @nuevoID;
+END;
+
+INSERT INTO tSolicitante (idS, tipoS, tipoDocumS, nroDocumS, paternoS, maternoS, nombresS, razonSocialS, celularS, telefonoS, dirElectronS)
+VALUES ('S999', 'EST', 'carnet', '999999999X', 'Perez', 'Lopez', 'Ana', NULL, '900000000', '510000000', 'ana.perez@example.com');
+
 
